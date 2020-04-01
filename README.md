@@ -33,7 +33,7 @@ func main() {
 
 	prob := m.Predict(predictData)
 
-	fmt.Printf("Cluster Probability: %G\n", prob)
+	fmt.Printf("Predict Cluster Probability: %G\n", prob)
 }
 
 func sampleArray(x int, y int) [][]int {
