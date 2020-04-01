@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/tmickleydoyle/bmm"
+	"github.com/tmickleydoyle/bernoulli-clusters"
 )
 
 func main() {
