@@ -1,3 +1,3 @@
-module github.com/tmickleydoyle/bmm
+module github.com/tmickleydoyle/bernoulli-clusters
 
 go 1.14
