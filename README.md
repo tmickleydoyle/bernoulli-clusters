@@ -1,3 +1,5 @@
+[![Go Report Card](https://goreportcard.com/badge/github.com/tmickleydoyle/bernoulli-clusters)](https://goreportcard.com/report/github.com/tmickleydoyle/bernoulli-clusters)
+
 # bernoulli-clusters
 Bernoulli Mixture Model for Sparse Data
 
