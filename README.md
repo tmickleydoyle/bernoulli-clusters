@@ -1,3 +1,4 @@
+[![Latest Release](https://img.shields.io/github/release/tmickleydoyle/bernoulli-clusters.svg)](https://github.com/tmickleydoyle/bernoulli-clusters/releases)
 [![Build Status](https://github.com/tmickleydoyle/bernoulli-clusters/workflows/build/badge.svg)](https://github.com/tmickleydoyle/bernoulli-clusters/actions)
 [![Coverage Status](https://coveralls.io/repos/github/tmickleydoyle/bernoulli-clusters/badge.svg?branch=master)](https://coveralls.io/github/tmickleydoyle/bernoulli-clusters?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/tmickleydoyle/bernoulli-clusters)](https://goreportcard.com/report/github.com/tmickleydoyle/bernoulli-clusters)
