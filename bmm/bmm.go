@@ -1,244 +1,240 @@
 package bmm
 
 import (
+	"errors"
+	"log"
 	"math"
 	"math/rand"
+	"time"
 )
 
-// Objects used to build the model.
-// These objects do not go outside of this script.
-var (
-	z  [][]float64
-	pi []float64
-	mu [][]float64
-)
-
-// Model includes the object for evaluating and predicting
+// Model represents a probabilistic clustering model using Bernoulli Mixture Model (BMM).
+// The model includes parameters for evaluating and predicting clusters for discrete data.
 type Model struct {
-	Pi       []float64
-	Mu       [][]float64
-	Clusters int
+	Pi       []float64   // Cluster weights
+	Mu       [][]float64 // Probability distributions for each cluster and feature
+	Z        [][]float64 // Posterior probabilities (responsibilities) for each data point
+	Clusters int         // Number of clusters
 }
 
-// round is used the floats
-// Normal middle school rounds rules
-func round(num float64) int {
-	return int(num + math.Copysign(0.5, num))
-}
-
-// roundTo can round to any decimal precision
-func roundTo(num float64, precision int) float64 {
-	output := math.Pow(10, float64(precision))
-	return float64(round(num*output)) / output
-}
-
-// nestedArray build an array of arrays.
-func nestedArray(x int, y int) [][]float64 {
-	a := make([][]float64, x)
-
-	for i := 0; i < x; i++ {
-		a[i] = make([]float64, y)
+// NewModel initializes and returns a new instance of Model.
+func NewModel(clusters int, features int) (*Model, error) {
+	if clusters <= 0 || features <= 0 {
+		return nil, errors.New("clusters and features must be greater than zero")
 	}
-
-	return a
+	
+	// Seed for reproducibility in randomness.
+	rand.Seed(time.Now().UnixNano())
+	
+	// Initialize model parameters.
+	model := &Model{
+		Pi:       initializePi(clusters),
+		Mu:       initializeMu(clusters, features, randomize=true),
+		Z:        initializeZ(clusters, features),
+		Clusters: clusters,
+	}
+	return model, nil
 }
 
-// Build an array of arrays for the z object.
-func zArray(n int, k int) [][]float64 {
-	s := nestedArray(n, k)
+// initializePi returns a slice with equal probabilities for each cluster.
+func initializePi(clusters int) []float64 {
+	pi := make([]float64, clusters)
+	equalProb := 1.0 / float64(clusters)
+	for i := range pi {
+		pi[i] = equalProb
+	}
+	return pi
+}
 
-	for i, row := range s {
-		for ni, v := range row {
-			if v >= 0 {
-				s[i][ni] = float64(1) / float64(k)
+// initializeMu returns a nested slice for Mu, with random values if `randomize` is true.
+func initializeMu(clusters, features int, randomize bool) [][]float64 {
+	mu := make([][]float64, clusters)
+	for i := range mu {
+		mu[i] = make([]float64, features)
+		for j := range mu[i] {
+			if randomize {
+				mu[i][j] = rand.Float64()
+			} else {
+				mu[i][j] = 1.0 / float64(features)
 			}
 		}
 	}
-
-	return s
+	return mu
 }
 
-// Build an array of array for the mu object.
-// The initial mu object uses random numbers.
-// The mu object created in the while loop applies
-// an equal weight to all of the indexes in the array.
-func muArray(x int, y int, new bool) [][]float64 {
-	s := nestedArray(x, y)
+// initializeZ returns a slice initialized with equal probabilities for each cluster.
+func initializeZ(dataPoints, clusters int) [][]float64 {
+	z := make([][]float64, dataPoints)
+	for i := range z {
+		z[i] = make([]float64, clusters)
+		for j := range z[i] {
+			z[i][j] = 1.0 / float64(clusters)
+		}
+	}
+	return z
+}
 
-	for i, row := range s {
-		for ni, v := range row {
-			if v >= 0 {
-				if new {
-					s[i][ni] = 1.0 / float64(y)
-				} else {
-					s[i][ni] = rand.Float64()
-				}
+// Fit trains the model with the given data and number of clusters.
+// `data` is expected to be a slice of integer slices, where each inner slice represents a data point with feature indices.
+func (m *Model) Fit(data [][]int) error {
+	// Validate input data
+	if len(data) == 0 || len(data[0]) == 0 {
+		return errors.New("data cannot be empty")
+	}
+	
+	// Preprocess data: remove duplicates and validate feature indices.
+	processedData, err := preprocessData(data, m.featureCount())
+	if err != nil {
+		return err
+	}
+
+	// Expectation-Maximization (EM) loop
+	for change := true; change; {
+		change = m.expectationStep(processedData)
+		change = m.maximizationStep(processedData) || change
+	}
+	
+	m.normalizePi()
+	return nil
+}
+
+// featureCount returns the number of features based on the length of Mu's inner slice.
+func (m *Model) featureCount() int {
+	if len(m.Mu) == 0 {
+		return 0
+	}
+	return len(m.Mu[0])
+}
+
+// preprocessData removes duplicates from data points and checks for feature index validity.
+func preprocessData(data [][]int, featureCount int) ([][]int, error) {
+	processed := make([][]int, len(data))
+	for i, row := range data {
+		uniqueFeatures := unique(row)
+		for _, feature := range uniqueFeatures {
+			if feature < 0 || feature >= featureCount {
+				return nil, errors.New("data contains invalid feature index")
 			}
 		}
+		processed[i] = uniqueFeatures
 	}
-
-	return s
+	return processed, nil
 }
 
-// Make an array for pi object the length of the clusters.
-func piArray(k int) []float64 {
-	s := make([]float64, k)
-
-	for i, v := range s {
-		if v >= 0 {
-			s[i] = float64(1) / float64(k)
+// unique removes duplicate values from an integer slice.
+func unique(slice []int) []int {
+	uniqueSet := map[int]bool{}
+	result := []int{}
+	for _, val := range slice {
+		if !uniqueSet[val] {
+			uniqueSet[val] = true
+			result = append(result, val)
 		}
 	}
-
-	return s
+	return result
 }
 
-// max finds the highest value in an array of nested arrays.
-func max(data [][]int) int {
-	max := 0
+// expectationStep updates the Z matrix with the latest posterior probabilities for each data point.
+func (m *Model) expectationStep(data [][]int) bool {
+	change := false
+	for i, row := range data {
+		logProbs := make([]float64, m.Clusters)
+		maxLogProb := math.Inf(-1)
 
-	for _, row := range data {
-		for _, v := range row {
-			if v > max {
-				max = v
-			}
-		}
-	}
-	return int(max)
-}
-
-// unique converts a array into a set of unique values.
-// It removes duplicate values.
-func unique(intSlice []int) []int {
-	keys := make(map[int]bool)
-	list := []int{}
-	for _, entry := range intSlice {
-		if _, value := keys[entry]; !value {
-			keys[entry] = true
-			list = append(list, entry)
-		}
-	}
-	return list
-}
-
-// probability calculates the odds of indexes being associated
-// with each other.
-func probability(data []int, k int) float64 {
-	clusterProb := 1.0
-
-	for i, v := range data {
-		if v >= 0 {
-			clusterProb *= mu[k][i]
-		}
-	}
-
-	return clusterProb * pi[k]
-}
-
-// Fit trains the model.
-// The outputs of the model are probabilities of the clusters,
-// the weight of the clusters, and the total number of clusters.
-func (m *Model) Fit(data [][]int, clusters int) {
-	// nM, zX, newPi, and newMu get updated with each loops to
-	// optimize for the best clustering of the data.
-	var nM []float64
-	var zX [][]float64
-	var newPi []float64
-	var newMu [][]float64
-
-	K := clusters
-	D := max(data) + 1
-	N := len(data)
-	z = zArray(N, K)
-	pi = piArray(K)
-	mu = muArray(K, D, false)
-
-	// change controls if the model should keep training
-	change := true
-	sumz := 0.0
-
-	for ind, row := range data {
-		data[ind] = unique(row)
-	}
-
-	for change == true {
-		change = false
-
-		for n, row := range data {
-			for k := 0; k < K; k++ {
-				z[n][k] = probability(row, k)
-				sumz += z[n][k]
-			}
-			for k := 0; k < K; k++ {
-				z[n][k] /= sumz
+		for k := 0; k < m.Clusters; k++ {
+			logProbs[k] = m.logProbability(row, k)
+			if logProbs[k] > maxLogProb {
+				maxLogProb = logProbs[k]
 			}
 		}
 
-		nM = make([]float64, K)
-		zX = nestedArray(K, D)
-		newPi = piArray(K)
-		newMu = muArray(K, D, true)
-
-		for k := 0; k < K; k++ {
-			for n, row := range data {
-				nM[k] += z[n][k]
-				for _, v := range row {
-					zX[k][v] += z[n][k] * 1
-				}
-			}
-
-			for d := 0; d < D; d++ {
-				newMu[k][d] = zX[k][d] / nM[k]
-			}
-			newPi[k] = nM[k] / float64(N)
+		// Convert log-probs to probabilities with normalization.
+		sumProb := 0.0
+		for k := range logProbs {
+			m.Z[i][k] = math.Exp(logProbs[k] - maxLogProb)
+			sumProb += m.Z[i][k]
 		}
 
-		for k := 0; k < K; k++ {
-			if roundTo(pi[k], 3) != roundTo(newPi[k], 3) {
+		for k := range m.Z[i] {
+			oldValue := m.Z[i][k]
+			m.Z[i][k] /= sumProb
+			if !change && math.Abs(oldValue-m.Z[i][k]) > 1e-5 {
 				change = true
-				pi[k] = newPi[k]
-			}
-			for d := 0; d < D; d++ {
-				if roundTo(mu[k][d], 3) != roundTo(newMu[k][d], 3) {
-					change = true
-					mu[k][d] = newMu[k][d]
-				}
 			}
 		}
 	}
-
-	totalPi := 0.0
-
-	for _, v := range pi {
-		totalPi += v
-	}
-
-	// Normalize pi so that the weights equal 100%
-	for k, v := range pi {
-		if v >= 0 {
-			pi[k] /= totalPi
-		}
-	}
-
-	// Below are the parameters needed for using the Predict func.
-	m.Pi = pi
-	m.Mu = mu
-	m.Clusters = K
+	return change
 }
 
-// Predict uses the trained objects from Fit to make predictions
-// on new data. The return of is a probability of the entire cluster.
-func (m *Model) Predict(predictData []int) float64 {
-	prob := 0.0
-	clusterProb := 1.0
+// maximizationStep updates Pi and Mu based on the current values of Z and data.
+func (m *Model) maximizationStep(data [][]int) bool {
+	change := false
+
+	// Initialize new Pi and Mu.
+	newPi := make([]float64, m.Clusters)
+	newMu := initializeMu(m.Clusters, m.featureCount(), randomize=false)
+	nM := make([]float64, m.Clusters)
 
 	for k := 0; k < m.Clusters; k++ {
-		clusterProb = 1
-		for _, v := range predictData {
-			clusterProb *= m.Mu[k][v]
+		for i, row := range data {
+			nM[k] += m.Z[i][k]
+			for _, feature := range row {
+				newMu[k][feature] += m.Z[i][k]
+			}
 		}
-		prob += clusterProb * m.Pi[k]
+
+		// Normalize Mu for cluster k
+		for d := 0; d < m.featureCount(); d++ {
+			newMu[k][d] /= nM[k]
+			if math.Abs(m.Mu[k][d]-newMu[k][d]) > 1e-5 {
+				change = true
+			}
+			m.Mu[k][d] = newMu[k][d]
+		}
+		newPi[k] = nM[k] / float64(len(data))
 	}
 
-	return prob
+	m.Pi = newPi
+	return change
+}
+
+// normalizePi ensures Pi sums to 1.0 across clusters.
+func (m *Model) normalizePi() {
+	total := 0.0
+	for _, weight := range m.Pi {
+		total += weight
+	}
+	for i := range m.Pi {
+		m.Pi[i] /= total
+	}
+}
+
+// logProbability calculates the log-probability of a data point belonging to a cluster.
+func (m *Model) logProbability(data []int, cluster int) float64 {
+	logProb := math.Log(m.Pi[cluster])
+	for _, feature := range data {
+		logProb += math.Log(m.Mu[cluster][feature])
+	}
+	return logProb
+}
+
+// Predict calculates the probability of the data point belonging to each cluster based on trained parameters.
+func (m *Model) Predict(data []int) float64 {
+	logProbSum := math.Inf(-1)
+	for k := 0; k < m.Clusters; k++ {
+		clusterLogProb := math.Log(m.Pi[k])
+		for _, feature := range data {
+			clusterLogProb += math.Log(m.Mu[k][feature])
+		}
+		logProbSum = math.LogSumExp(logProbSum, clusterLogProb)
+	}
+	return math.Exp(logProbSum)
+}
+
+// LogSumExp computes the log-sum-exp trick for numerical stability when summing probabilities in log-space.
+func LogSumExp(a, b float64) float64 {
+	if a > b {
+		return a + math.Log1p(math.Exp(b-a))
+	}
+	return b + math.Log1p(math.Exp(a-b))
 }
